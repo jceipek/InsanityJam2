@@ -12,7 +12,6 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
     , startPos: {x: 0, y: 0}
     , endPos: {x: 0, y: 0}
     }
-  , gesturePoints: []
   , CONSTS: {
       worldDims: {
         width: 30
@@ -68,26 +67,30 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       data.gesture.visualization.stroke = "#ccc";
       data.gesture.visualization.linewidth = 0.1;
     }
-  , gestureUp: function (e, world, renderer, recognizer) {
+  , gestureUp: function (e, world, renderer) {
       var _g = this;
     
       data.gesture.inProgress = false;
       if (data.gesture.points.length > 1) {
-        var avgPos = {
-          x: data.gesture.posSum.x/data.gesture.points.length
-        , y: data.gesture.posSum.y/data.gesture.points.length
-        };
+        var avgPos = {x: 0, y:0};
+        var resampled = resample(data.gesture.points, 30);
+        var i;
+        for (i = 0; i < resampled.length; i++) {
+          avgPos.x += resampled[i].x;
+          avgPos.y += resampled[i].y;
+        }
+        avgPos.x /= resampled.length;
+        avgPos.y /= resampled.length;
+        var radius = 0;
+        for (i = 0; i < resampled.length; i++) {
+          radius += Math.sqrt(Math.pow(resampled[i].x - avgPos.x,2) + Math.pow(resampled[i].y - avgPos.y,2));
+        }
+        radius /= resampled.length;
         
+        radius = Math.max(radius, 0.2);
         
-        var x = avgPos.x - data.gesture.startPos.x;
-        var y = avgPos.y - data.gesture.startPos.y;
-        
-        var params = avgPos;
-        params.radius = Math.max(Math.sqrt(x * x + y * y), 0.2);
+        var params = {x: avgPos.x, y: avgPos.y, radius: radius};
         _g.addNewCircleEntity(world, renderer, params);
-        
-//        var result = recognizer.Recognize([data.gesture.points], true, true, true);
-//        console.log(result);        
       }
       
       data.gesture.points.length = 0;
@@ -103,18 +106,15 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
 
       var x = e.offsetX
         , y = e.offsetY;
-          
-      data.gesture.points.push(new N$.Point(x, y));
     
       x -= renderer.width/2;
       y -= renderer.height/2;
       x/=renderer.scene.scale;
       y/=renderer.scene.scale;
     
-      data.gesture.posSum.x += x;
-      data.gesture.posSum.y += y;
       data.gesture.endPos.x = x;
       data.gesture.endPos.y = y;
+      data.gesture.points.push({x: x, y: y});
     
       x -= data.gesture.visualization.translation.x;
       y -= data.gesture.visualization.translation.y;
@@ -216,6 +216,48 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       _g.addEntity(_g.makeCircleEntity(world, renderer, params));
     }
   };
+  
+  function distance(p1, p2) { // distance between two points
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  
+  function pathLength(points) { // length traversed by a point path
+    var d = 0.0;
+    for (var i = 1; i < points.length; i++) {
+      d += distance(points[i - 1], points[i]);
+    }
+    return d;
+  }
+  
+  function resample(points, n) {
+    var intervalLength = pathLength(points) / (n - 1);
+    var distanceAccumulator = 0.0;
+    var newpoints = [points[0]];
+    for (var i = 1; i < points.length; i++)
+    {
+      var d = distance(points[i - 1], points[i]);
+      if ((distanceAccumulator + d) >= intervalLength)
+      {
+        var qx = points[i - 1].x + ((intervalLength - distanceAccumulator) / d) * (points[i].x - points[i - 1].x);
+        var qy = points[i - 1].y + ((intervalLength - distanceAccumulator) / d) * (points[i].y - points[i - 1].y);
+        var q = {x: qx, y: qy};
+        newpoints.push(q);
+        points.splice(i, 0, q); // insert 'q' at position i in points s.t. 'q' will be the next i
+        distanceAccumulator = 0.0;
+      } else {
+        distanceAccumulator += d;
+      }
+    }
+    if (newpoints.length == n - 1) { // somtimes we fall a rounding-error short of adding the last point, so add it if so
+      newpoints[newpoints.length] = {
+        x: points[points.length - 1].x
+      , y: points[points.length - 1].y
+      };
+    }
+    return newpoints;
+  }
   
 //  var c3 = new p2.RevoluteConstraint(pistonBody, armBody, {
 //                localPivotA: [0,0],
