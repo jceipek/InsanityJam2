@@ -8,6 +8,9 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       inProgress: null
     , points: []
     , visualization: null
+    , posSum: {x: 0, y: 0}
+    , startPos: {x: 0, y: 0}
+    , endPos: {x: 0, y: 0}
     }
   , gesturePoints: []
   , CONSTS: {
@@ -40,7 +43,7 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
     
       var recognizer = new N$.NDollarRecognizer(true);
       $(elem).mousedown(function (e) { _g.gestureDown(e, renderer); });
-      $(document).mouseup(function (e) { _g.gestureUp(e, renderer, recognizer); });
+      $(document).mouseup(function (e) { _g.gestureUp(e, world, renderer, recognizer); });
       $(elem).mousemove(function (e) { _g.gestureMove(e, renderer); });
     }
   , gestureDown: function (e, renderer) {
@@ -52,19 +55,46 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       x /= renderer.scene.scale;
       y /= renderer.scene.scale;
     
+      data.gesture.posSum.x = x;
+      data.gesture.posSum.y = y;
+      data.gesture.startPos.x = x;
+      data.gesture.startPos.y = y;
+      data.gesture.endPos.x = x;
+      data.gesture.endPos.y = y;
+    
       data.gesture.inProgress = true;
       data.gesture.visualization = renderer.makeCurve(x,y,x+0.1,y+0.1, true);
       data.gesture.visualization.noFill();
       data.gesture.visualization.stroke = "#ccc";
       data.gesture.visualization.linewidth = 0.1;
     }
-  , gestureUp: function (e, renderer, recognizer) {
+  , gestureUp: function (e, world, renderer, recognizer) {
+      var _g = this;
+    
       data.gesture.inProgress = false;
-      var result = recognizer.Recognize([data.gesture.points], true, true, true);
-      console.log(result);
+      if (data.gesture.points.length > 1) {
+        var avgPos = {
+          x: data.gesture.posSum.x/data.gesture.points.length
+        , y: data.gesture.posSum.y/data.gesture.points.length
+        };
+        
+        
+        var x = avgPos.x - data.gesture.startPos.x;
+        var y = avgPos.y - data.gesture.startPos.y;
+        
+        var params = avgPos;
+        params.radius = Math.max(Math.sqrt(x * x + y * y), 0.2);
+        _g.addNewCircleEntity(world, renderer, params);
+        
+//        var result = recognizer.Recognize([data.gesture.points], true, true, true);
+//        console.log(result);        
+      }
+      
       data.gesture.points.length = 0;
     
-      renderer.remove(data.gesture.visualization);
+      if (data.gesture.visualization) {
+        renderer.remove(data.gesture.visualization);
+      }
     }
   , gestureMove: function (e, renderer) {
       if (!data.gesture.inProgress) {
@@ -80,6 +110,12 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       y -= renderer.height/2;
       x/=renderer.scene.scale;
       y/=renderer.scene.scale;
+    
+      data.gesture.posSum.x += x;
+      data.gesture.posSum.y += y;
+      data.gesture.endPos.x = x;
+      data.gesture.endPos.y = y;
+    
       x -= data.gesture.visualization.translation.x;
       y -= data.gesture.visualization.translation.y;
     
@@ -158,8 +194,8 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
     
       // Create an empty dynamic body
       circleBody = new P2.Body({
-        mass: 5
-      , position: [x,y]
+        mass: Math.PI * radius * radius
+      , position: [x,-y]
       });
 
       // Add a circle shape to the body.
@@ -180,6 +216,13 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       _g.addEntity(_g.makeCircleEntity(world, renderer, params));
     }
   };
+  
+//  var c3 = new p2.RevoluteConstraint(pistonBody, armBody, {
+//                localPivotA: [0,0],
+//                localPivotB: [-L/2,0],
+//                collideConnected: false
+//            });
+//            world.addConstraint(c3);
 
   return G;
 });
