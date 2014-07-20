@@ -7,6 +7,7 @@ require.config({
     domReady: '3rdparty/domReady'
   , two: '3rdparty/two.min'
   , p2: '3rdparty/p2.min'
+  , ndollar: '3rdparty/ndollar'
   }
 });
 

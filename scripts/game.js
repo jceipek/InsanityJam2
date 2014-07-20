@@ -1,10 +1,11 @@
 /*jshint browser:true */
 /*global define:true*/
 
-define(['webglSupported', 'two', 'p2'], function (webglSupported, Two, P2) {
+define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two, P2, N$) {
   var data = {
     world: null
   , entities: []
+  , gesturePoints: []
   , CONSTS: {
       worldDims: {
         width: 30
@@ -35,6 +36,9 @@ define(['webglSupported', 'two', 'p2'], function (webglSupported, Two, P2) {
     
       _g.resizeScene(renderer);
       addEvent(window, 'resize', _g.resizeScene.bind(_g, renderer));
+    
+      var recognizer = new N$.NDollarRecognizer(true);
+      addEvent(window, 'mousemove', function (e) {_g.addGesturePoints(e, recognizer);});
       
       _g.drawGameBorders(renderer);
     
@@ -45,6 +49,20 @@ define(['webglSupported', 'two', 'p2'], function (webglSupported, Two, P2) {
       setInterval(_g.physicsLoop.bind(_g, world, timeStep), 1000 * timeStep);
       renderer.play();
     }
+  , addGesturePoints: function (e, recognizer) {
+    // XXX: Only works in Chrome according to http://stackoverflow.com/questions/7938839/firefox-mousemove-event-which
+    if (e.which === 0) {
+      if (data.gesturePoints.length > 0) {
+        // Recognize gesture
+        var result = recognizer.Recognize([data.gesturePoints], true, true, true);
+        console.log(result);
+        data.gesturePoints.length = 0;
+      }
+    } else {
+      // Add to gesture points
+      data.gesturePoints.push(new N$.Point(e.pageX, e.pageY));
+    }
+  }
   , drawGameBorders: function (renderer) {
       var DIMS = data.CONSTS.worldDims;
       var rect = renderer.makeRectangle(0,0,DIMS.width,DIMS.height);
