@@ -1,10 +1,14 @@
 /*jshint browser:true */
 /*global define:true*/
 
-define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two, P2, N$) {
+define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSupported, Two, P2, N$, $) {
   var data = {
-    world: null
-  , entities: []
+    entities: []
+  , gesture: {
+      inProgress: null
+    , points: []
+    , visualization: null
+    }
   , gesturePoints: []
   , CONSTS: {
       worldDims: {
@@ -12,18 +16,6 @@ define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two
       , height: 50
       , zoom: 1
       }
-    }
-  };
-  
-  // From http://stackoverflow.com/questions/641857/javascript-window-resize-event
-  var addEvent = function(elem, type, eventHandle) {
-    if (elem === null || typeof(elem) == 'undefined') { return; }
-    if ( elem.addEventListener ) {
-        elem.addEventListener( type, eventHandle, false );
-    } else if ( elem.attachEvent ) {
-        elem.attachEvent( "on" + type, eventHandle );
-    } else {
-        elem["on"+type]=eventHandle;
     }
   };
   
@@ -35,34 +27,64 @@ define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two
       var renderer = _g.setupRenderer(elem);
     
       _g.resizeScene(renderer);
-      addEvent(window, 'resize', _g.resizeScene.bind(_g, renderer));
-    
-      var recognizer = new N$.NDollarRecognizer(true);
-      addEvent(window, 'mousemove', function (e) {_g.addGesturePoints(e, recognizer);});
+      $(window).resize(_g.resizeScene.bind(_g, renderer));
       
       _g.drawGameBorders(renderer);
     
       var world = _g.setupPhysics();
-      data.entities.push(_g.makeCircleEntity(world, renderer));
+      _g.addNewCircleEntity(world, renderer, {x: 0, y: 10, radius: 1});
     
       var timeStep = 1 / 60;
       setInterval(_g.physicsLoop.bind(_g, world, timeStep), 1000 * timeStep);
       renderer.play();
+    
+      var recognizer = new N$.NDollarRecognizer(true);
+      $(elem).mousedown(function (e) { _g.gestureDown(e, renderer); });
+      $(document).mouseup(function (e) { _g.gestureUp(e, renderer, recognizer); });
+      $(elem).mousemove(function (e) { _g.gestureMove(e, renderer); });
     }
-  , addGesturePoints: function (e, recognizer) {
-    // XXX: Only works in Chrome according to http://stackoverflow.com/questions/7938839/firefox-mousemove-event-which
-    if (e.which === 0) {
-      if (data.gesturePoints.length > 0) {
-        // Recognize gesture
-        var result = recognizer.Recognize([data.gesturePoints], true, true, true);
-        console.log(result);
-        data.gesturePoints.length = 0;
+  , gestureDown: function (e, renderer) {
+      var x = e.offsetX
+        , y = e.offsetY;
+    
+      x -= renderer.width/2;
+      y -= renderer.height/2;
+      x /= renderer.scene.scale;
+      y /= renderer.scene.scale;
+    
+      data.gesture.inProgress = true;
+      data.gesture.visualization = renderer.makeCurve(x,y,x+0.1,y+0.1, true);
+      data.gesture.visualization.noFill();
+      data.gesture.visualization.stroke = "#ccc";
+      data.gesture.visualization.linewidth = 0.1;
+    }
+  , gestureUp: function (e, renderer, recognizer) {
+      data.gesture.inProgress = false;
+      var result = recognizer.Recognize([data.gesture.points], true, true, true);
+      console.log(result);
+      data.gesture.points.length = 0;
+    
+      renderer.remove(data.gesture.visualization);
+    }
+  , gestureMove: function (e, renderer) {
+      if (!data.gesture.inProgress) {
+        return;
       }
-    } else {
-      // Add to gesture points
-      data.gesturePoints.push(new N$.Point(e.pageX, e.pageY));
+
+      var x = e.offsetX
+        , y = e.offsetY;
+          
+      data.gesture.points.push(new N$.Point(x, y));
+    
+      x -= renderer.width/2;
+      y -= renderer.height/2;
+      x/=renderer.scene.scale;
+      y/=renderer.scene.scale;
+      x -= data.gesture.visualization.translation.x;
+      y -= data.gesture.visualization.translation.y;
+    
+      data.gesture.visualization.vertices.push(new Two.Anchor(x,y));
     }
-  }
   , drawGameBorders: function (renderer) {
       var DIMS = data.CONSTS.worldDims;
       var rect = renderer.makeRectangle(0,0,DIMS.width,DIMS.height);
@@ -87,6 +109,7 @@ define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two
       } else {
         params.type = Two.Types.canvas;
       }
+      params.type = Two.Types.svg;
       return new Two(params).appendTo(domElement);
     }
   , setupPhysics: function () {
@@ -119,21 +142,28 @@ define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two
         entity.graphic.translation.y = -entity.physicsBody.position[1];
       }
     }
-  , makeCircleEntity: function (world, renderer) {
-      var radius = 1;
-      var position = [0, 10];
-      var circleVis = renderer.makeCircle(position[0], position[1], radius);
+  , addEntity: function (entity) {
+      data.entities.push(entity);
+    }
+  , makeCircleEntity: function (world, renderer, params) {
+      params = (params === undefined)? {} : params;
+      var circleVis, circleBody, circleShape
+        , x = (params.x === undefined)? 0 : params.x
+        , y = (params.y === undefined)? 0 : params.y
+        , radius = (params.y === undefined)? 1 : params.radius;
+    
+      circleVis = renderer.makeCircle(x, y, radius);
       circleVis.fill = 'rgb(0, 0, 0)';
       circleVis.noStroke();
     
       // Create an empty dynamic body
-      var circleBody = new P2.Body({
+      circleBody = new P2.Body({
         mass: 5
-      , position: position
+      , position: [x,y]
       });
 
       // Add a circle shape to the body.
-      var circleShape = new P2.Circle(radius);
+      circleShape = new P2.Circle(radius);
       circleBody.addShape(circleShape);
 
       // ...and add the body to the world.
@@ -144,6 +174,10 @@ define(['webglSupported', 'two', 'p2', 'ndollar'], function (webglSupported, Two
         graphic: circleVis
       , physicsBody: circleBody
       };
+    }
+  , addNewCircleEntity: function(world, renderer, params) {
+      var _g = this;
+      _g.addEntity(_g.makeCircleEntity(world, renderer, params));
     }
   };
 

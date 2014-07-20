@@ -8,6 +8,12 @@ require.config({
   , two: '3rdparty/two.min'
   , p2: '3rdparty/p2.min'
   , ndollar: '3rdparty/ndollar'
+  , zepto: '3rdparty/zepto.min'
+  }
+, shim: {
+    zepto: {
+      exports: '$'
+    }
   }
 });
 
