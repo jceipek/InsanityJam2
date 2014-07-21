@@ -31,7 +31,7 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       _g.resizeScene(renderer);
       $(window).resize(_g.resizeScene.bind(_g, renderer));
       
-      _g.drawGameBorders(renderer);
+//      _g.drawGameBorders(renderer);
     
       var world = _g.setupPhysics();
       _g.addNewCircleEntity(world, renderer, {x: 0, y: 10, radius: 1});
@@ -87,10 +87,37 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
         }
         radius /= resampled.length;
         
-        radius = Math.max(radius, 0.2);
+        radius = Math.max(radius, 1);
+        
+        var chosen = {smallestDist: Infinity, obj: null, anchor: null};
+        for (i = 0; i < data.entities.length; i++) {
+          var entity = data.entities[i];
+          var rootPos = entity.graphic.translation;
+          for (var key in entity.connectionsGraphic.children) {
+            if (!entity.connectionsGraphic.children.hasOwnProperty(key)) {
+              continue;
+            }
+            var pos = entity.connectionsGraphic.children[key].translation;
+            var d = sqrDistance(avgPos,{x: pos.x + rootPos.x, y: pos.y + rootPos.y});
+            if (chosen.smallestDist > d) {
+              chosen.smallestDist = d;
+              chosen.obj = entity;
+              chosen.anchor = {x: pos.x, y: -pos.y};
+            }
+          }
+        }
         
         var params = {x: avgPos.x, y: avgPos.y, radius: radius};
-        _g.addNewCircleEntity(world, renderer, params);
+        var newEntity = _g.addNewCircleEntity(world, renderer, params);
+        
+        if (chosen.obj !== null) {
+          var constraint = new P2.RevoluteConstraint(newEntity.physicsBody, chosen.obj.physicsBody, {
+              localPivotA: [0,0],
+              localPivotB: [chosen.anchor.x,chosen.anchor.y],
+              collideConnected: false
+          });
+          world.addConstraint(constraint);
+        }
       }
       
       data.gesture.points.length = 0;
@@ -176,6 +203,8 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
         entity = entities[i];
         entity.graphic.translation.x = entity.physicsBody.position[0];
         entity.graphic.translation.y = -entity.physicsBody.position[1];
+        entity.graphic.rotation = -entity.physicsBody.angle;
+//        console.log(entity);
       }
     }
   , addEntity: function (entity) {
@@ -188,10 +217,51 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
         , y = (params.y === undefined)? 0 : params.y
         , radius = (params.y === undefined)? 1 : params.radius;
     
-      circleVis = renderer.makeCircle(x, y, radius);
-      circleVis.fill = 'rgb(0, 0, 0)';
-      circleVis.noStroke();
+      var circleGraphic = renderer.makeCircle(0, 0, radius);
+      circleGraphic.fill = 'rgb(0, 0, 0)';
+      circleGraphic.noStroke();
     
+      var connectionCircles = [];
+    
+      // Adapted from the optimized OpenGL cicle-drawing routine http://slabode.exofire.net/circle_draw.shtml
+      var directionCount = 3;
+      var theta = 2 * Math.PI / directionCount;
+      var tangetialFactor = Math.tan (theta);
+      var radialFactor = Math.cos (theta);
+
+      var cx = 0;
+      var cy = 1;
+
+      var tx, ty;
+      for (var i = 0; i < directionCount; i++) {
+        var connectionCircle = renderer.makeCircle(cx * radius, cy * radius, 0.3);
+        connectionCircle.fill = 'rgb(115, 239, 255)';
+        connectionCircle.stroke = 'black';
+        connectionCircle.linewidth = 0.3;
+//        connectionCircle.noStroke();
+        connectionCircles.push(connectionCircle);
+        // calculate the tangential vector
+        // the radial vector is (x, y)
+        // to get the tangential vector we flip those coordinates and negate one of them
+        tx = -cy;
+        ty = cx;
+
+        // add the tangential vector, moving around but away from the circle
+        cx += tx * tangetialFactor;
+        cy += ty * tangetialFactor;
+
+        // correct using the radial factor, pulling back to the circle center
+        cx *= radialFactor;
+        cy *= radialFactor;
+      }
+    
+      var connectionsVis = renderer.makeGroup(connectionCircles);
+    
+      var group = renderer.makeGroup(circleGraphic, connectionsVis);
+      group.translation.x = x;
+      group.translation.y = y;
+      circleVis = group;
+
       // Create an empty dynamic body
       circleBody = new P2.Body({
         mass: Math.PI * radius * radius
@@ -207,13 +277,16 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
       world.addBody(circleBody);
     
       return {
-        graphic: circleVis
+        graphic: group
+      , connectionsGraphic: connectionsVis
       , physicsBody: circleBody
       };
     }
   , addNewCircleEntity: function(world, renderer, params) {
       var _g = this;
-      _g.addEntity(_g.makeCircleEntity(world, renderer, params));
+      var newEntity = _g.makeCircleEntity(world, renderer, params);
+      _g.addEntity(newEntity);
+      return newEntity;
     }
   };
   
@@ -221,6 +294,12 @@ define(['webglSupported', 'two', 'p2', 'ndollar', 'zepto'], function (webglSuppo
     var dx = p2.x - p1.x;
     var dy = p2.y - p1.y;
     return Math.sqrt(dx * dx + dy * dy);
+  }
+  
+  function sqrDistance(p1, p2) { // distance between two points
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    return dx * dx + dy * dy;
   }
   
   function pathLength(points) { // length traversed by a point path
